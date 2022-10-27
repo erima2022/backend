@@ -1,0 +1,90 @@
+name: deploy backend
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  RELEASE_REVISION: "pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}"
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  KUBE_NAMESPACE: eri-dev-env
+  ECR_REPOSITORY: ${{ secrets.DEV_ECR_REPOSITORY }}
+
+jobs:
+  release:
+    name: deploy sample app
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.4.1
+        with:
+          access_token: ${{ github.token }}
+
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Kubectl tool installer
+        uses: Azure/setup-kubectl@v3
+        id: install
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push the image to Amazon ECR
+        id: build-image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: ${{ secrets.DEV_ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+
+          echo "Building ECR Image..."
+          echo "Registry"
+          echo $REGISTRY
+
+          echo "REPO:"
+          echo $REPOSITORY
+          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG ./eribkend
+          echo "Pushing image to ECR..."
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+      - uses: cschleiden/replace-tokens@v1
+        with:
+          files: '["k8s/dev/deployment.yaml"]'
+          tokenPrefix: __
+          tokenSuffix: __
+        env:
+          DOCKER_REPOSITORY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_NAME: ${{ secrets.DEV_ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+
+      - name: Update kube config
+        run: aws eks --region us-east-2 update-kubeconfig --name erica-cx-cluster
+
+      - name: Deploy image to Amazon EKS
+        run: |
+          kubectl create namespace eri-dev-env --dry-run=client -o yaml | kubectl apply -f -       
+          kubectl apply -f k8s/dev/namespace-dev.json
+          kubectl apply -f k8s/dev/aws-auth.yaml
+          kubectl apply -f k8s/dev/deployment.yaml 
+          kubectl apply -f k8s/dev/deployment-serviceAccount.yaml
+          kubectl apply -f k8s/dev/cloudwatch-namespace.yaml
+          kubectl apply -f k8s/dev/cwagent-serviceaccount.yaml
+          kubectl apply -f k8s/dev/01-cw-agent-configmap.yaml
+          kubectl apply -f k8s/dev/cwagent-daemonset.yaml
+          kubectl apply -f k8s/dev/02-cw-fluentbit-configmap.yaml
+          kubectl apply -f k8s/dev/fluent-bit.yaml

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-auth
+  namespace: eri-dev-env
+  labels:
+    app: erica-backend-app
+data:
+  mapUsers: |
+    - userarn: arn:aws:iam::719042170775:user/
+      username: erica.lopez
+      groups:
+        - system:masters
