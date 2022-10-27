@@ -15,7 +15,7 @@ env:
 
 jobs:
   release:
-    name: deploy sample app
+    name: deploy backend app
 
     runs-on: ubuntu-latest
     steps:
