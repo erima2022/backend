@@ -43,6 +43,29 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
+    #  Manual approval needed
+      # - name: Manual Workflow Approval
+      #   uses: trstringer/manual-approval@v1
+      #   timeout-minutes: 60
+      #   with:
+      #     secret: ${{ github.TOKEN }}
+      #     approvers: erima2022,erima21
+      #     minimum-approvals: 1
+      #     issue-title: "Deploying to Stage"
+
+      - name: Generate token
+        id: generate_token
+        uses: tibdex/github-app-token@v1
+        with:
+          app_id: ${{ secrets.APP_ID }}
+          private_key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Wait for approval
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ steps.generate_token.outputs.token }}
+          approvers: myteam
+          minimum-approvals: 1
 
       - name: Build, tag, and push the image to Amazon ECR
         id: build-image
